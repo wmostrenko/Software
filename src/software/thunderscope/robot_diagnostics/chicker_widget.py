@@ -12,6 +12,10 @@ class ChickerCommandMode(Enum):
     CHIP = 2
     AUTOKICK = 3
     AUTOCHIP = 4
+    KICK_PULSE_WIDTH = 5
+    CHIP_PULSE_WIDTH = 6
+    AUTOKICK_PULSE_WIDTH = 7
+    AUTOCHIP_PULSE_WIDTH = 8
 
 
 class ChickerWidget(QWidget):
@@ -31,6 +35,7 @@ class ChickerWidget(QWidget):
 
         vbox_layout = QVBoxLayout()
         self.radio_buttons_group = QButtonGroup()
+        self.power_mode_buttons_group = QButtonGroup()
         self.proto_unix_io = proto_unix_io
 
         # Initialising the buttons
@@ -43,6 +48,18 @@ class ChickerWidget(QWidget):
         self.chip_button = self.push_buttons[1]
 
         vbox_layout.addWidget(self.push_button_box)
+
+        # power mode button group box
+        self.power_mode_button_box, self.power_mode_buttons = common_widgets.create_radio(
+            ["Power (m/s)", "Power (Pulse Width)"], self.power_mode_buttons_group
+        )
+        self.meters_per_second_button = self.power_mode_buttons[0]
+        self.pulse_width_button = self.power_mode_buttons[1]
+
+        # set buttons to be initially enabled
+        self.meters_per_second_button.setChecked(True)
+
+        vbox_layout.addWidget(self.power_mode_button_box)
 
         # radio button group box
         self.radio_button_box, self.radio_buttons = common_widgets.create_radio(
@@ -63,10 +80,16 @@ class ChickerWidget(QWidget):
 
         # kick button and chip button connected to send_command_and_timeout with their respective commands
         self.kick_button.clicked.connect(
-            lambda: self.send_command_and_timeout(ChickerCommandMode.KICK)
+            lambda: self.send_command_and_timeout(
+                lambda: ChickerCommandMode.KICK_PULSE_WIDTH
+                    if self.pulse_width_button.isChecked() else ChickerCommandMode.KICK
+            )
         )
         self.chip_button.clicked.connect(
-            lambda: self.send_command_and_timeout(ChickerCommandMode.CHIP)
+            lambda: self.send_command_and_timeout(
+                lambda: ChickerCommandMode.CHIP_PULSE_WIDTH
+                    if self.pulse_width_button.isChecked() else ChickerCommandMode.CHIP
+            )
         )
 
         # no auto button enables both buttons, while auto kick and auto chip disable both buttons
@@ -99,6 +122,15 @@ class ChickerWidget(QWidget):
         )
         vbox_layout.addLayout(self.power_slider_layout)
 
+        (
+            self.pulse_width_slider_layout,
+            self.pulse_width_slider,
+            self.pulse_width_label,
+        ) = common_widgets.create_slider(
+            "Power (Pulse Width)", 1, 7500, 1
+        )
+        vbox_layout.addLayout(self.pulse_width_slider_layout)
+
         self.setLayout(vbox_layout)
 
         # to manage the state of radio buttons - to make sure message is only sent once
@@ -107,6 +139,7 @@ class ChickerWidget(QWidget):
         # initial values
         self.geneva_value = 3
         self.power_value = 1
+        self.pulse_width_value = 1
 
     def send_command_and_timeout(self, command: ChickerCommandMode) -> None:
         """If buttons are enabled, sends a Kick command and disables buttons
@@ -159,7 +192,10 @@ class ChickerWidget(QWidget):
 
         power_value = self.power_slider.value()
 
+        pulse_width_value = self.pulse_width_slider.value()
+
         power_control = PowerControl()
+        power_pulse_control = PowerPulseControl()
         power_control.geneva_slot = geneva_value
 
         # sends kick, chip, autokick, or autchip primitive
@@ -173,13 +209,23 @@ class ChickerWidget(QWidget):
             power_control.chicker.auto_chip_or_kick.autochip_distance_meters = (
                 power_value
             )
+        elif command == ChickerCommandMode.KICK_PULSE_WIDTH:
+            power_control.chicker.kick_pulse_width = pulse_width_value
+        elif command == ChickerCommandMode.CHIP_PULSE_WIDTH:
+            power_control.chicker.chip_pulse_width = pulse_width_value
+        elif command == ChickerCommandMode.AUTOKICK_PULSE_WIDTH:
+            power_control.chicker.auto_chip_or_kick.autokick_pulse_width = pulse_width_value
+        elif command == ChickerCommandMode.AUTOCHIP_PULSE_WIDTH:
+            power_control.chicker.auto_chip_or_kick.autochip_pulse_width = pulse_width_value
 
         # sends proto
         self.proto_unix_io.send_proto(PowerControl, power_control)
 
         # clears the proto buffer for kick or chip commands
         # so only one kick / chip is sent
-        if command == ChickerCommandMode.KICK or command == ChickerCommandMode.CHIP:
+        if (command == ChickerCommandMode.KICK or command == ChickerCommandMode.CHIP
+                or command == ChickerCommandMode.KICK_PULSE_WIDTH
+                or command == ChickerCommandMode.CHIP_PULSE_WIDTH):
             self.clear_proto_buffer()
 
     def clear_proto_buffer(self) -> None:
@@ -213,12 +259,23 @@ class ChickerWidget(QWidget):
         power_value = self.power_slider.value()
         self.power_label.setText(str(power_value))
 
+        pulse_width_value = self.pulse_width_slider.value()
+        self.pulse_width_label.setText(str(pulse_width_value))
+
         # refreshes button state based on enable boolean
         self.change_button_state(self.kick_button, self.kick_chip_buttons_enable)
         self.change_button_state(self.chip_button, self.kick_chip_buttons_enable)
 
         # If auto is enabled, we want to populate the autochip or kick message
-        if self.auto_kick_button.isChecked():
-            self.send_command(ChickerCommandMode.AUTOKICK)
-        elif self.auto_chip_button.isChecked():
-            self.send_command(ChickerCommandMode.AUTOCHIP)
+        if self.meters_per_second_button.isChecked():
+            if self.auto_kick_button.isChecked():
+                self.send_command(ChickerCommandMode.AUTOKICK)
+            elif self.auto_chip_button.isChecked():
+                self.send_command(ChickerCommandMode.AUTOCHIP)
+        elif self.pulse_width_button.isChecked():
+            if self.auto_kick_button.isChecked():
+                self.send_command(ChickerCommandMode.AUTOKICK_PULSE_WIDTH)
+            elif self.auto_chip_button.isChecked():
+                self.send_command(ChickerCommandMode.AUTOCHIP_PULSE_WIDTH)
+
+
