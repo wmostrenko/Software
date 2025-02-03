@@ -127,7 +127,7 @@ class ChickerWidget(QWidget):
             self.pulse_width_slider,
             self.pulse_width_label,
         ) = common_widgets.create_slider(
-            "Power (Pulse Width)", 1, 7500, 1
+            "Power (Pulse Width)", 1, 20000, 1
         )
         vbox_layout.addLayout(self.pulse_width_slider_layout)
 
